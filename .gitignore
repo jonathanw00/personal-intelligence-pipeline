@@ -12,3 +12,5 @@ failed/*
 __pycache__/
 *.pyc
 venv/
+.bot_offset
+bot.lock
