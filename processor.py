@@ -278,14 +278,13 @@ def main():
     dry_run = args.dry_run or cfg.get("dry_run", False)
     logger = setup_logging(cfg["log_max_bytes"])
 
-    if args.test:
-        run_test(cfg, logger, dry_run)
-        return
-
     if not acquire_lock(logger):
         sys.exit(1)
     try:
-        run_loop(cfg, logger, dry_run)
+        if args.test:
+            run_test(cfg, logger, dry_run)
+        else:
+            run_loop(cfg, logger, dry_run)
     finally:
         release_lock()
 
