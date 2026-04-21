@@ -127,9 +127,13 @@ def call_claude(cfg: dict, content_type: str, url: str, text: str) -> dict:
     # so we always send the full text to Haiku here (Haiku handles its own context).
     user_message = build_user_message(content_type, url or "", iso_date, text)
 
+    max_tokens = cfg["claude_max_tokens"]
+    logging.getLogger("pipeline").info(
+        "Calling Claude model=%s max_tokens=%s", cfg["claude_model"], max_tokens
+    )
     response = client.messages.create(
         model=cfg["claude_model"],
-        max_tokens=cfg["claude_max_tokens"],
+        max_tokens=max_tokens,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}],
     )
