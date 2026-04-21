@@ -6,7 +6,7 @@ digest_path: "Weekly Digest"
 
 # Claude API
 claude_model: "claude-haiku-4-5-20251001"
-claude_max_tokens: 1000
+claude_max_tokens: 4096
 tags_max: 6
 tags_min: 4
 
