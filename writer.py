@@ -31,13 +31,21 @@ def _sanitise_filename(title: str) -> str:
     return re.sub(r'[\\/:*?"<>|]', "", title).strip()
 
 
-def _apply_highlights(source_text: str, key_points: list) -> str:
-    """Find each key-point quote in source_text and wrap it in ==...==.
+def _quote_markers(quote_style: str) -> Tuple[str, str]:
+    """Return (open, close) markers for the configured quote style."""
+    if quote_style == "bold":
+        return ("**", "**")
+    return ("==", "==")
+
+
+def _apply_highlights(source_text: str, key_points: list, quote_style: str) -> str:
+    """Find each key-point quote in source_text and wrap it with the configured markers.
 
     Tries exact match first, then case-insensitive. Quotes that cannot be
     located are silently skipped so the source text is never corrupted.
-    Applies highlights right-to-left to preserve character offsets.
+    Applies markers right-to-left to preserve character offsets.
     """
+    open_m, close_m = _quote_markers(quote_style)
     positions: List[Tuple[int, int]] = []
     for kp in key_points:
         quote = kp.get("quote", "")
@@ -66,7 +74,7 @@ def _apply_highlights(source_text: str, key_points: list) -> str:
     # Insert markers right-to-left so earlier offsets stay valid
     result = source_text
     for start, end in reversed(deduped):
-        result = result[:start] + "==" + result[start:end] + "==" + result[end:]
+        result = result[:start] + open_m + result[start:end] + close_m + result[end:]
     return result
 
 
@@ -87,13 +95,14 @@ def _build_frontmatter(cfg: dict, claude_output: dict, content_type: str, url: s
     )
 
 
-def _build_key_points(key_points: list) -> str:
+def _build_key_points(key_points: list, quote_style: str) -> str:
+    open_m, close_m = _quote_markers(quote_style)
     lines = []
     for kp in key_points:
         point = kp["point"]
         quote = kp.get("quote", "")
         if quote:
-            lines.append(f'- {point} — "{quote}"')
+            lines.append(f"- {point} — {open_m}{quote}{close_m}")
         else:
             lines.append(f"- {point}")
     return "\n".join(lines)
@@ -103,9 +112,11 @@ def _word_count(text: str) -> int:
     return len(text.split())
 
 
-def _context_windows(highlighted_source: str, window_words: int) -> str:
-    """Return only ~window_words of context around each ==highlight==, joined by [...]."""
-    highlight_pattern = re.compile(r"==.+?==", re.DOTALL)
+def _context_windows(highlighted_source: str, window_words: int, quote_style: str) -> str:
+    """Return only ~window_words of context around each marked quote, joined by [...]."""
+    open_m, close_m = _quote_markers(quote_style)
+    marker_pat = re.escape(open_m) + r".+?" + re.escape(close_m)
+    highlight_pattern = re.compile(marker_pat, re.DOTALL)
     matches = list(highlight_pattern.finditer(highlighted_source))
     if not matches:
         return highlighted_source
@@ -152,11 +163,11 @@ def _context_windows(highlighted_source: str, window_words: int) -> str:
     return "\n\n[...]\n\n".join(segments)
 
 
-def _build_source_body(cfg: dict, highlighted_source: str) -> str:
+def _build_source_body(cfg: dict, highlighted_source: str, quote_style: str) -> str:
     threshold = cfg.get("full_text_threshold_words", 3000)
     window_words = cfg.get("context_window_words", 200)
     if _word_count(highlighted_source) > threshold:
-        return _context_windows(highlighted_source, window_words)
+        return _context_windows(highlighted_source, window_words, quote_style)
     return highlighted_source
 
 
@@ -177,12 +188,14 @@ def write_note(
     raw_title = _sanitise_filename(claude_output["filename_title"])
     filename = f"{date_str} — {raw_title} — {type_suffix}.md"
 
-    highlighted = _apply_highlights(source_text, claude_output.get("key_points", []))
+    quote_style = cfg.get("quote_style", "highlight")
+    key_points = claude_output.get("key_points", [])
+    highlighted = _apply_highlights(source_text, key_points, quote_style)
 
     frontmatter = _build_frontmatter(cfg, claude_output, content_type, url, date_str)
     summary_section = f"## Summary\n\n{claude_output['summary']}"
-    key_points_section = f"## Key points\n\n{_build_key_points(claude_output['key_points'])}"
-    source_body = _build_source_body(cfg, highlighted)
+    key_points_section = f"## Key points\n\n{_build_key_points(key_points, quote_style)}"
+    source_body = _build_source_body(cfg, highlighted, quote_style)
 
     note = (
         f"{frontmatter}\n\n"

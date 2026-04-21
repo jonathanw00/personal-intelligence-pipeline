@@ -33,5 +33,9 @@ min_paste_words: 100              # messages above this word count treated as pa
 full_text_threshold_words: 3000   # above this, use context windows instead of full text
 context_window_words: 200         # words of context captured around each quoted passage
 
+# Quote style — how quotes appear in key points and source text
+# options: highlight (==quote==) | bold (**quote**)
+quote_style: highlight
+
 # Flags
 dry_run: false
