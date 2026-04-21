@@ -193,7 +193,7 @@ def write_note(
     )
 
     vault_root = Path(cfg["obsidian_vault_path"])
-    resources_dir = vault_root / cfg["resources_path"]
+    resources_dir = vault_root / cfg["resources_path"] / dt.strftime("%Y") / dt.strftime("%B")
     resources_dir.mkdir(parents=True, exist_ok=True)
 
     note_path = resources_dir / filename
