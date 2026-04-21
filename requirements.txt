@@ -5,3 +5,4 @@ readability-lxml
 yt-dlp
 pyyaml
 requests
+python-dotenv
