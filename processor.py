@@ -219,21 +219,48 @@ def run_loop(cfg: dict, logger: logging.Logger, dry_run: bool):
 # --test mode
 # ---------------------------------------------------------------------------
 
-TEST_URL = "https://paulgraham.com/greatwork.html"
+TEST_STEM = None  # computed at runtime from date
 
 
 def run_test(cfg: dict, logger: logging.Logger, dry_run: bool):
-    logger.info("TEST MODE — URL: %s", TEST_URL)
-    fake_job = {
-        "input_type": "url",
-        "url": TEST_URL,
-        "type": "article",
-        "received_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
-        "chat_id": "test",
-    }
-    job_path = INBOX_DIR / "test_run.job"
-    job_path.write_text(json.dumps(fake_job))
-    process_job(job_path, cfg, logger, dry_run)
+    date_str = datetime.now().strftime("%d-%b-%Y")
+    test_stem = f"{date_str} — Test Fixture — Article"
+
+    logger.info("TEST MODE — no network, no Haiku API calls")
+    logger.info("TEST STEM: %s", test_stem)
+
+    fake_body = (
+        f"---\n"
+        f"source: test\n"
+        f"type: article\n"
+        f"url: https://example.com/test\n"
+        f"created: {datetime.now().isoformat()}\n"
+        f"tags: [test, fixture]\n"
+        f"status: inbox\n"
+        f"summary: \"Hardcoded test fixture — no Haiku call made.\"\n"
+        f"daily-note: \"[[{date_str}]]\"\n"
+        f"---\n\n"
+        f"# {test_stem}\n\n"
+        f"This is a hardcoded test fixture. No article was fetched. "
+        f"No API calls were made. Used to verify writer + daily_note append logic.\n"
+    )
+
+    vault_root = Path(cfg["obsidian_vault_path"])
+    resources_path = cfg["resources_path"]
+    now = datetime.now()
+    target_dir = vault_root / resources_path / now.strftime("%Y") / now.strftime("%B")
+
+    if dry_run:
+        logger.info("TEST DRY-RUN — would write to: %s", target_dir / f"{test_stem}.md")
+        return
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / f"{test_stem}.md"
+    target_path.write_text(fake_body, encoding="utf-8")
+    logger.info("TEST: wrote fake note: %s", target_path)
+
+    daily_note.append_wikilink(cfg, test_stem, logger)
+    logger.info("TEST MODE complete")
 
 
 # ---------------------------------------------------------------------------
