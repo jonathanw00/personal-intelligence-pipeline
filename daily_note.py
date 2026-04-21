@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def _format_date(dt: datetime) -> str:
-    return f"{dt.day}-{dt.strftime('%b')}-{dt.strftime('%Y')}"
+    return dt.strftime("%d-%b-%Y")
 
 
 def append_wikilink(cfg: dict, note_stem: str, logger: logging.Logger) -> None:
