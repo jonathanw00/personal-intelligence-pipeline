@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 from datetime import datetime
@@ -134,7 +135,20 @@ def call_claude(cfg: dict, content_type: str, url: str, text: str) -> dict:
     )
 
     raw = response.content[0].text.strip()
-    return json.loads(raw)
+    logger_inst = logging.getLogger("pipeline")
+    logger_inst.info("Claude raw response: %s", raw)
+
+    # Strip markdown code fences that Claude sometimes wraps around JSON
+    cleaned = raw
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        cleaned = cleaned.strip()
+
+    if not cleaned:
+        raise ValueError(f"Claude returned an empty response after stripping fences. Raw: {raw!r}")
+
+    return json.loads(cleaned)
 
 
 # ---------------------------------------------------------------------------
