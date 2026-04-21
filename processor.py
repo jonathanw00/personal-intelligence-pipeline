@@ -216,7 +216,7 @@ def run_loop(cfg: dict, logger: logging.Logger, dry_run: bool):
 # --test mode
 # ---------------------------------------------------------------------------
 
-TEST_URL = "https://www.wsj.com/opinion/america-loses-its-will-to-work-85d74fd6"
+TEST_URL = "https://paulgraham.com/greatwork.html"
 
 
 def run_test(cfg: dict, logger: logging.Logger, dry_run: bool):
