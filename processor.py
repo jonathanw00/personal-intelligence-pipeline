@@ -94,11 +94,7 @@ summary: 1–3 sentences. What is this piece about, and why does it matter? Writ
 
 key_points: Array of objects. Scale the number to content depth — 3–5 for focused pieces, 5–8 for substantial ones, up to 10 for dense long-form. Each object has:
   - point: A distilled insight in your own words. One tight sentence. The kind of thing someone would underline.
-  - quote: The single sharpest line from the source that best supports this point. Clean it up — remove filler, false starts, verbal tics. Preserve authentic voice. Make it scannable and memorable on first read. If no strong quote exists for a point, omit this field.
-
-highlighted_source: The full primary article text, with each selected quote wrapped in ==double equals signs== at its exact location in the body. Highlights should correspond to the quotes used in key_points. Do not highlight anything that isn't a key_points quote.
-
-content_type: Either "article" or "youtube"
+  - quote: The single sharpest line from the source that best supports this point. Copy it verbatim from the source text — do not paraphrase or reword. Preserve authentic voice. Make it scannable and memorable on first read. If no strong quote exists for a point, omit this field.
 
 Quote discipline:
 — One quote per key point maximum
@@ -122,9 +118,6 @@ def call_claude(cfg: dict, content_type: str, url: str, text: str) -> dict:
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     iso_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
 
-    # For long content, honour full_text_threshold — pass full text or windowed text.
-    # Context windowing is applied by the writer after we receive highlighted_source,
-    # so we always send the full text to Haiku here (Haiku handles its own context).
     user_message = build_user_message(content_type, url or "", iso_date, text)
 
     max_tokens = cfg["claude_max_tokens"]
@@ -192,7 +185,9 @@ def process_job(job_path: Path, cfg: dict, logger: logging.Logger, dry_run: bool
             logger.info("Dry run — skipping vault write. Claude output:\n%s",
                         json.dumps(claude_output, indent=2))
         else:
-            note_path = writer.write_note(cfg, claude_output, url, job.get("received_at"))
+            note_path = writer.write_note(
+                cfg, claude_output, url, job.get("received_at"), text, content_type
+            )
             logger.info("Note written: %s", note_path)
 
         proc_path.rename(DONE_DIR / job_name)

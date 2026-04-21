@@ -31,8 +31,46 @@ def _sanitise_filename(title: str) -> str:
     return re.sub(r'[\\/:*?"<>|]', "", title).strip()
 
 
-def _build_frontmatter(cfg: dict, claude_output: dict, url: str, date_str: str) -> str:
-    content_type = claude_output.get("content_type", "article")
+def _apply_highlights(source_text: str, key_points: list) -> str:
+    """Find each key-point quote in source_text and wrap it in ==...==.
+
+    Tries exact match first, then case-insensitive. Quotes that cannot be
+    located are silently skipped so the source text is never corrupted.
+    Applies highlights right-to-left to preserve character offsets.
+    """
+    positions: List[Tuple[int, int]] = []
+    for kp in key_points:
+        quote = kp.get("quote", "")
+        if not quote:
+            continue
+        # Exact match
+        idx = source_text.find(quote)
+        if idx == -1:
+            # Case-insensitive fallback
+            m = re.search(re.escape(quote), source_text, re.IGNORECASE)
+            idx = m.start() if m else -1
+            if idx != -1:
+                quote = source_text[idx: idx + len(quote)]
+        if idx == -1:
+            continue
+        positions.append((idx, idx + len(quote)))
+
+    # Remove overlapping spans (keep first occurrence)
+    positions.sort()
+    deduped: List[Tuple[int, int]] = []
+    for start, end in positions:
+        if deduped and start < deduped[-1][1]:
+            continue
+        deduped.append((start, end))
+
+    # Insert markers right-to-left so earlier offsets stay valid
+    result = source_text
+    for start, end in reversed(deduped):
+        result = result[:start] + "==" + result[start:end] + "==" + result[end:]
+    return result
+
+
+def _build_frontmatter(cfg: dict, claude_output: dict, content_type: str, url: str, date_str: str) -> str:
     tags_yaml = "\n".join(f"  - {t}" for t in claude_output["tags"])
     summary = claude_output["summary"].replace('"', '\\"')
     source_line = url if url else ""
@@ -122,21 +160,29 @@ def _build_source_body(cfg: dict, highlighted_source: str) -> str:
     return highlighted_source
 
 
-def write_note(cfg: dict, claude_output: dict, url: str, received_at: Optional[str]) -> Path:
+def write_note(
+    cfg: dict,
+    claude_output: dict,
+    url: str,
+    received_at: Optional[str],
+    source_text: str,
+    content_type: str,
+) -> Path:
     """Assemble and write a markdown note to the vault. Returns the note path."""
     dt = _parse_received_at(received_at)
     date_str = _format_date(dt)
 
-    content_type = claude_output.get("content_type", "article")
     type_suffix = _TYPE_SUFFIX.get(content_type, content_type.capitalize())
 
     raw_title = _sanitise_filename(claude_output["filename_title"])
     filename = f"{date_str} — {raw_title} — {type_suffix}.md"
 
-    frontmatter = _build_frontmatter(cfg, claude_output, url, date_str)
+    highlighted = _apply_highlights(source_text, claude_output.get("key_points", []))
+
+    frontmatter = _build_frontmatter(cfg, claude_output, content_type, url, date_str)
     summary_section = f"## Summary\n\n{claude_output['summary']}"
     key_points_section = f"## Key points\n\n{_build_key_points(claude_output['key_points'])}"
-    source_body = _build_source_body(cfg, claude_output.get("highlighted_source", ""))
+    source_body = _build_source_body(cfg, highlighted)
 
     note = (
         f"{frontmatter}\n\n"
