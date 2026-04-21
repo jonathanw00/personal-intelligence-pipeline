@@ -236,11 +236,10 @@ def handle_message(update: dict, cfg: dict, token: str, allowed_chat_id: str, lo
         if note_title:
             msg = f"✅ Saved: [[{note_title}]]"
         else:
-            msg = "✅ Processed successfully."
+            msg = "❌ Processor ran but no new note found. Check logs."
         logger.info("Processor succeeded. %s", msg)
     else:
-        preview = text[:80]
-        msg = f"❌ Failed to process: {preview}\nCheck logs: {LOGS_DIR}/"
+        msg = "❌ Job failed — check failed/ folder"
         logger.error("Processor failed (rc=%s): %s", result.returncode, result.stderr[:200])
 
     send_telegram(token, chat_id, msg)
