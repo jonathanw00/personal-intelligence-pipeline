@@ -14,6 +14,7 @@ import yaml
 from dotenv import load_dotenv
 
 from adapters import article as article_adapter
+import daily_note
 import writer
 
 # ---------------------------------------------------------------------------
@@ -189,6 +190,8 @@ def process_job(job_path: Path, cfg: dict, logger: logging.Logger, dry_run: bool
                 cfg, claude_output, url, job.get("received_at"), text, content_type
             )
             logger.info("Note written: %s", note_path)
+            if cfg.get("daily_note_append", True):
+                daily_note.append_wikilink(cfg, note_path.stem, logger)
 
         proc_path.rename(DONE_DIR / job_name)
         logger.info("Done: %s", job_name)
