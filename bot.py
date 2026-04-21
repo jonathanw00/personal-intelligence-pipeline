@@ -166,7 +166,7 @@ def run_processor() -> subprocess.CompletedProcess:
 # ---------------------------------------------------------------------------
 
 
-def find_latest_note(cfg: dict) -> str:
+def find_latest_note(cfg: dict, before: float) -> str:
     now = datetime.now()
     month_dir = (
         Path(cfg["obsidian_vault_path"])
@@ -176,7 +176,7 @@ def find_latest_note(cfg: dict) -> str:
     )
     try:
         md_files = sorted(month_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if md_files:
+        if md_files and md_files[0].stat().st_mtime > before:
             return md_files[0].stem
     except OSError:
         pass
@@ -228,10 +228,11 @@ def handle_message(update: dict, cfg: dict, token: str, allowed_chat_id: str, lo
         return
 
     logger.info("Triggering processor")
+    triggered_at = datetime.now().timestamp()
     result = run_processor()
 
     if result.returncode == 0:
-        note_title = find_latest_note(cfg)
+        note_title = find_latest_note(cfg, triggered_at)
         if note_title:
             msg = f"✅ Saved: [[{note_title}]]"
         else:
