@@ -1,0 +1,7 @@
+anthropic
+python-telegram-bot
+trafilatura
+readability-lxml
+yt-dlp
+pyyaml
+requests

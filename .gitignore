@@ -1,0 +1,14 @@
+.env
+pipeline.lock
+pipeline.log
+inbox/*
+!inbox/.gitkeep
+processing/*
+!processing/.gitkeep
+done/*
+!done/.gitkeep
+failed/*
+!failed/.gitkeep
+__pycache__/
+*.pyc
+venv/
