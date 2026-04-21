@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 
 # Maps content_type → display suffix used in filename and frontmatter
@@ -16,7 +17,7 @@ def _format_date(dt: datetime) -> str:
     return f"{dt.day}-{dt.strftime('%b')}-{dt.strftime('%Y')}"
 
 
-def _parse_received_at(received_at: str | None) -> datetime:
+def _parse_received_at(received_at: Optional[str]) -> datetime:
     if received_at:
         try:
             return datetime.fromisoformat(received_at)
@@ -79,7 +80,7 @@ def _context_windows(highlighted_source: str, window_words: int) -> str:
     half = window_words // 2
 
     # For each highlight find its word-index range, then expand by half on each side
-    windows: list[tuple[int, int]] = []
+    windows: List[Tuple[int, int]] = []
     for m in matches:
         hit = [
             i for i, w in enumerate(word_spans)
@@ -96,7 +97,7 @@ def _context_windows(highlighted_source: str, window_words: int) -> str:
 
     # Merge overlapping / adjacent windows
     windows.sort()
-    merged: list[list[int]] = [list(windows[0])]
+    merged: List[List[int]] = [list(windows[0])]
     for start, end in windows[1:]:
         if start <= merged[-1][1] + 1:
             merged[-1][1] = max(merged[-1][1], end)
@@ -121,7 +122,7 @@ def _build_source_body(cfg: dict, highlighted_source: str) -> str:
     return highlighted_source
 
 
-def write_note(cfg: dict, claude_output: dict, url: str, received_at: str | None) -> Path:
+def write_note(cfg: dict, claude_output: dict, url: str, received_at: Optional[str]) -> Path:
     """Assemble and write a markdown note to the vault. Returns the note path."""
     dt = _parse_received_at(received_at)
     date_str = _format_date(dt)
