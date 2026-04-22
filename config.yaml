@@ -18,6 +18,7 @@ daily_note_append: true
 daily_note_path: "Journal/2020's"
 daily_note_emoji: "📚"
 daily_note_heading: "Articles"
+timezone: "America/Denver"
 
 # Weekly digest
 digest_day: "sunday"

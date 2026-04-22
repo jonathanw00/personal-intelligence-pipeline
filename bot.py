@@ -118,7 +118,7 @@ def send_telegram(token: str, chat_id: str, text: str):
 # ---------------------------------------------------------------------------
 
 
-def write_job(input_type: str, content: str, chat_id: str) -> Path:
+def write_job(input_type: str, content: str, chat_id: str, telegram_date: int) -> Path:
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     uid = uuid.uuid4().hex[:8]
     filename = f"{ts}_{uid}.job"
@@ -131,6 +131,7 @@ def write_job(input_type: str, content: str, chat_id: str) -> Path:
             "url": content,
             "type": "article",
             "received_at": now_iso,
+            "telegram_date": telegram_date,
             "chat_id": chat_id,
         }
     else:
@@ -140,6 +141,7 @@ def write_job(input_type: str, content: str, chat_id: str) -> Path:
             "type": "article",
             "text": content,
             "received_at": now_iso,
+            "telegram_date": telegram_date,
             "chat_id": chat_id,
         }
 
@@ -201,6 +203,7 @@ def handle_message(update: dict, cfg: dict, token: str, allowed_chat_id: str, lo
 
     logger.info("Message from %s: %s", chat_id, text[:80])
 
+    tg_date = message.get("date", 0)
     is_url = text.startswith("http://") or text.startswith("https://")
     word_count = len(text.split())
     min_paste_words = cfg.get("min_paste_words", 100)
@@ -219,7 +222,7 @@ def handle_message(update: dict, cfg: dict, token: str, allowed_chat_id: str, lo
         return
 
     try:
-        job_path = write_job(input_type, content, chat_id)
+        job_path = write_job(input_type, content, chat_id, tg_date)
         logger.info("Job written: %s", job_path.name)
     except Exception as exc:
         logger.error("Failed to write job: %s", exc)

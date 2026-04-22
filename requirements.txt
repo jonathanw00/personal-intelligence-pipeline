@@ -6,3 +6,5 @@ yt-dlp
 pyyaml
 requests
 python-dotenv
+backports.zoneinfo; python_version<"3.9"
+tzdata; sys_platform=="win32"

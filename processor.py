@@ -5,13 +5,18 @@ import os
 import re
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import anthropic
 import yaml
 from dotenv import load_dotenv
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
 
 from adapters import article as article_adapter
 import daily_note
@@ -154,6 +159,30 @@ def call_claude(cfg: dict, content_type: str, url: str, text: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_note_dt(job: dict, cfg: dict, logger: logging.Logger) -> datetime:
+    """Return a naive local datetime for the note date, derived from telegram_date."""
+    tz_name = cfg.get("timezone", "UTC")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        logger.warning("Unknown timezone %r — falling back to UTC", tz_name)
+        tz = ZoneInfo("UTC")
+
+    raw_ts = job.get("telegram_date")
+    if raw_ts:
+        return datetime.fromtimestamp(int(raw_ts), tz=tz).replace(tzinfo=None)
+
+    logger.warning("Job missing telegram_date — falling back to received_at for note date")
+    received_at = job.get("received_at", "")
+    if received_at:
+        try:
+            utc_dt = datetime.fromisoformat(received_at).replace(tzinfo=timezone.utc)
+            return utc_dt.astimezone(tz).replace(tzinfo=None)
+        except (ValueError, AttributeError):
+            pass
+    return datetime.now()
+
+
 def process_job(job_path: Path, cfg: dict, logger: logging.Logger, dry_run: bool):
     job_name = job_path.name
     proc_path = PROCESSING_DIR / job_name
@@ -164,6 +193,7 @@ def process_job(job_path: Path, cfg: dict, logger: logging.Logger, dry_run: bool
     try:
         job = json.loads(proc_path.read_text())
         content_type = job.get("type", "article")
+        note_dt = _resolve_note_dt(job, cfg, logger)
 
         if content_type != "article":
             raise ValueError(f"Unsupported content type: {content_type}")
@@ -187,11 +217,11 @@ def process_job(job_path: Path, cfg: dict, logger: logging.Logger, dry_run: bool
                         json.dumps(claude_output, indent=2))
         else:
             note_path = writer.write_note(
-                cfg, claude_output, url, job.get("received_at"), text, content_type
+                cfg, claude_output, url, note_dt, text, content_type
             )
             logger.info("Note written: %s", note_path)
             if cfg.get("daily_note_append", True):
-                daily_note.append_wikilink(cfg, note_path.stem, logger)
+                daily_note.append_wikilink(cfg, note_path.stem, note_dt, logger)
 
         proc_path.rename(DONE_DIR / job_name)
         logger.info("Done: %s", job_name)
@@ -223,7 +253,13 @@ TEST_STEM = None  # computed at runtime from date
 
 
 def run_test(cfg: dict, logger: logging.Logger, dry_run: bool):
-    date_str = datetime.now().strftime("%d-%b-%Y")
+    tz_name = cfg.get("timezone", "UTC")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    note_dt = datetime.now(tz=tz).replace(tzinfo=None)
+    date_str = note_dt.strftime("%d-%b-%Y")
     test_stem = f"{date_str} — Test Fixture — Article"
 
     logger.info("TEST MODE — no network, no Haiku API calls")
@@ -247,8 +283,7 @@ def run_test(cfg: dict, logger: logging.Logger, dry_run: bool):
 
     vault_root = Path(cfg["obsidian_vault_path"])
     resources_path = cfg["resources_path"]
-    now = datetime.now()
-    target_dir = vault_root / resources_path / now.strftime("%Y") / now.strftime("%B")
+    target_dir = vault_root / resources_path / note_dt.strftime("%Y") / note_dt.strftime("%B")
 
     if dry_run:
         logger.info("TEST DRY-RUN — would write to: %s", target_dir / f"{test_stem}.md")
@@ -259,8 +294,44 @@ def run_test(cfg: dict, logger: logging.Logger, dry_run: bool):
     target_path.write_text(fake_body, encoding="utf-8")
     logger.info("TEST: wrote fake note: %s", target_path)
 
-    daily_note.append_wikilink(cfg, test_stem, logger)
+    daily_note.append_wikilink(cfg, test_stem, note_dt, logger)
     logger.info("TEST MODE complete")
+
+
+def run_test_tz(cfg: dict, logger: logging.Logger):
+    """Verify cross-midnight UTC→local conversion using a timestamp at 03:00 UTC today.
+
+    03:00 UTC is always the previous calendar day in America/Denver (UTC-6/UTC-7), so
+    utc_date and local_date should always differ for that timezone.
+    """
+    from datetime import date, timedelta
+    from datetime import timezone as stdlib_tz
+
+    tz_name = cfg.get("timezone", "UTC")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        logger.error("TEST-TZ FAILED — timezone %r not resolvable", tz_name)
+        return
+
+    today_utc_midnight = datetime.combine(date.today(), datetime.min.time()).replace(
+        tzinfo=stdlib_tz.utc
+    )
+    ts = int((today_utc_midnight + timedelta(hours=3)).timestamp())
+
+    fake_job = {"telegram_date": ts}
+    note_dt = _resolve_note_dt(fake_job, cfg, logger)
+
+    utc_date = datetime.fromtimestamp(ts, tz=stdlib_tz.utc).strftime("%d-%b-%Y")
+    local_date = note_dt.strftime("%d-%b-%Y")
+
+    logger.info("TEST-TZ — UTC date: %s, local date (%s): %s", utc_date, tz_name, local_date)
+    if utc_date != local_date:
+        logger.info("TEST-TZ PASSED — cross-midnight conversion correct (UTC %s → local %s)",
+                    utc_date, local_date)
+    else:
+        logger.warning("TEST-TZ INCONCLUSIVE — UTC and local dates are the same (%s); "
+                       "configured timezone may be east of UTC or have small offset", local_date)
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +341,8 @@ def run_test(cfg: dict, logger: logging.Logger, dry_run: bool):
 
 def main():
     parser = argparse.ArgumentParser(description="Personal Intelligence Pipeline processor")
-    parser.add_argument("--test", action="store_true", help="Run a test job against a hardcoded URL")
+    parser.add_argument("--test", action="store_true", help="Offline fixture: write fake note + daily note append")
+    parser.add_argument("--test-tz", action="store_true", help="Verify cross-midnight UTC→local date conversion")
     parser.add_argument("--dry-run", action="store_true", help="Process jobs but do not write to vault")
     args = parser.parse_args()
 
@@ -283,6 +355,8 @@ def main():
     try:
         if args.test:
             run_test(cfg, logger, dry_run)
+        elif args.test_tz:
+            run_test_tz(cfg, logger)
         else:
             run_loop(cfg, logger, dry_run)
     finally:

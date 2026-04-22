@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 
 # Maps content_type → display suffix used in filename and frontmatter
@@ -14,16 +14,7 @@ _TYPE_SUFFIX = {
 
 def _format_date(dt: datetime) -> str:
     """Return DD-Mon-YYYY, e.g. 19-Apr-2026."""
-    return f"{dt.day}-{dt.strftime('%b')}-{dt.strftime('%Y')}"
-
-
-def _parse_received_at(received_at: Optional[str]) -> datetime:
-    if received_at:
-        try:
-            return datetime.fromisoformat(received_at)
-        except ValueError:
-            pass
-    return datetime.utcnow()
+    return dt.strftime("%d-%b-%Y")
 
 
 def _sanitise_filename(title: str) -> str:
@@ -78,19 +69,26 @@ def _apply_highlights(source_text: str, key_points: list, quote_style: str) -> s
     return result
 
 
-def _build_frontmatter(cfg: dict, claude_output: dict, content_type: str, url: str, date_str: str) -> str:
+def _build_frontmatter(
+    cfg: dict,
+    claude_output: dict,
+    content_type: str,
+    url: str,
+    created_str: str,
+    note_date_str: str,
+) -> str:
     tags_yaml = "\n".join(f"  - {t}" for t in claude_output["tags"])
     summary = claude_output["summary"].replace('"', '\\"')
     source_line = url if url else ""
     return (
         "---\n"
-        f"created: {date_str}\n"
+        f"created: {created_str}\n"
         f"source: {source_line}\n"
         f"type: {content_type}\n"
         f"tags:\n{tags_yaml}\n"
         "status: inbox\n"
         f'summary: "{summary}"\n'
-        f'daily-note: "[[{date_str}]]"\n'
+        f'daily-note: "[[{note_date_str}]]"\n'
         "---"
     )
 
@@ -175,24 +173,24 @@ def write_note(
     cfg: dict,
     claude_output: dict,
     url: str,
-    received_at: Optional[str],
+    note_dt: datetime,
     source_text: str,
     content_type: str,
 ) -> Path:
     """Assemble and write a markdown note to the vault. Returns the note path."""
-    dt = _parse_received_at(received_at)
-    date_str = _format_date(dt)
+    note_date_str = _format_date(note_dt)
+    created_str = _format_date(datetime.now())
 
     type_suffix = _TYPE_SUFFIX.get(content_type, content_type.capitalize())
 
     raw_title = _sanitise_filename(claude_output["filename_title"])
-    filename = f"{date_str} — {raw_title} — {type_suffix}.md"
+    filename = f"{note_date_str} — {raw_title} — {type_suffix}.md"
 
     quote_style = cfg.get("quote_style", "highlight")
     key_points = claude_output.get("key_points", [])
     highlighted = _apply_highlights(source_text, key_points, quote_style)
 
-    frontmatter = _build_frontmatter(cfg, claude_output, content_type, url, date_str)
+    frontmatter = _build_frontmatter(cfg, claude_output, content_type, url, created_str, note_date_str)
     summary_section = f"## Summary\n\n{claude_output['summary']}"
     key_points_section = f"## Key points\n\n{_build_key_points(key_points, quote_style)}"
     source_body = _build_source_body(cfg, highlighted, quote_style)
@@ -206,7 +204,7 @@ def write_note(
     )
 
     vault_root = Path(cfg["obsidian_vault_path"])
-    resources_dir = vault_root / cfg["resources_path"] / dt.strftime("%Y") / dt.strftime("%B")
+    resources_dir = vault_root / cfg["resources_path"] / note_dt.strftime("%Y") / note_dt.strftime("%B")
     resources_dir.mkdir(parents=True, exist_ok=True)
 
     note_path = resources_dir / filename

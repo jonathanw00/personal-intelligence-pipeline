@@ -8,23 +8,22 @@ def _format_date(dt: datetime) -> str:
     return dt.strftime("%d-%b-%Y")
 
 
-def append_wikilink(cfg: dict, note_stem: str, logger: logging.Logger) -> None:
-    """Append a wikilink line to today's daily note. Failures are logged but not re-raised."""
+def append_wikilink(cfg: dict, note_stem: str, dt: datetime, logger: logging.Logger) -> None:
+    """Append a wikilink line to the daily note for dt. Failures are logged but not re-raised."""
     try:
-        _append(cfg, note_stem, logger)
+        _append(cfg, note_stem, dt, logger)
     except Exception as exc:
         logger.error("Daily note append failed (non-fatal): %s", exc, exc_info=True)
 
 
-def _append(cfg: dict, note_stem: str, logger: logging.Logger) -> None:
+def _append(cfg: dict, note_stem: str, dt: datetime, logger: logging.Logger) -> None:
     vault_root = Path(cfg["obsidian_vault_path"])
     base_path = cfg.get("daily_note_path", "Journal/2020's")
     heading_name = cfg.get("daily_note_heading", "Articles")
     emoji = cfg.get("daily_note_emoji", "\U0001f4da")  # 📚
 
-    now = datetime.now()
-    date_str = _format_date(now)
-    note_dir = vault_root / base_path / now.strftime("%Y") / now.strftime("%B")
+    date_str = _format_date(dt)
+    note_dir = vault_root / base_path / dt.strftime("%Y") / dt.strftime("%B")
     note_file = note_dir / f"{date_str}.md"
 
     wikilink_line = f"{emoji} [[{note_stem}]]"
