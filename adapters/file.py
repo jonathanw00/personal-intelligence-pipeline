@@ -3,7 +3,7 @@ import logging
 import os
 import re
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 import anthropic
@@ -12,7 +12,6 @@ import yaml
 logger = logging.getLogger("pipeline")
 
 FRONTMATTER_PATTERN = re.compile(r"^---\n(.*?)\n---\n?(.*)", re.DOTALL)
-H1_PATTERN = re.compile(r"^# (.+?)(?:\n|$)", re.MULTILINE)
 IMAGE_RE = re.compile(r"^!\[[^\]]*\]\([^)]+\)\s*$")
 CAPTION_KEEP_RE = re.compile(r"^(?:[#\-\*\+>]|\d+[.)])")
 
@@ -36,6 +35,43 @@ HAIKU_PROMPT = (
     "}}\n\n"
     "Article body:\n---\n{body}\n---"
 )
+
+
+# ---------------------------------------------------------------------------
+# H1 extraction (handles multi-line titles)
+# ---------------------------------------------------------------------------
+
+
+def extract_h1_multiline(body: str) -> Tuple[Optional[str], str]:
+    """Extract H1 title (handling multi-line H1s) and return (title, body_without_h1).
+
+    Returns (None, body) if no H1 found.
+    """
+    lines = body.splitlines(keepends=True)
+    h1_start = None
+    for i, line in enumerate(lines):
+        if line.startswith("# ") and not line.startswith("## "):
+            h1_start = i
+            break
+    if h1_start is None:
+        return None, body
+
+    h1_lines = [lines[h1_start][2:]]  # strip "# "
+    consumed = h1_start + 1
+    while consumed < len(lines):
+        nxt = lines[consumed]
+        if not nxt.strip():
+            break
+        if nxt.lstrip().startswith("#"):
+            break
+        h1_lines.append(nxt)
+        consumed += 1
+
+    title = " ".join(part.strip() for part in h1_lines)
+    title = re.sub(r"\s+", " ", title).strip()
+
+    new_body = "".join(lines[:h1_start] + lines[consumed:])
+    return title, new_body
 
 
 # ---------------------------------------------------------------------------
@@ -247,14 +283,10 @@ def process(job: dict, cfg: dict) -> dict:
         body = content
 
     # Step 2 — Extract H1 title, remove from body
-    h1_match = H1_PATTERN.search(body)
-    if h1_match:
-        title = h1_match.group(1).strip()
-        body = body[: h1_match.start()] + body[h1_match.end():]
-    else:
+    title, body = extract_h1_multiline(body)
+    if title is None:
         stem = os.path.splitext(filename)[0]
         title = stem.replace("-", " ").replace("_", " ")
-        # Also check frontmatter for title
         if metadata.get("title"):
             title = str(metadata["title"]).strip()
 
