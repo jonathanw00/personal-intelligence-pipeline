@@ -229,6 +229,55 @@ def strip_nyt_boilerplate(body: str) -> str:
     return body
 
 
+def extract_and_strip_excerpt(body: str) -> Tuple[Optional[str], str]:
+    """Find and remove a Markdownload excerpt block, returning (excerpt_text, body_without_excerpt).
+
+    Matches blocks of the form:
+        > ## Excerpt
+        > <text...>
+    Returns (None, body) if no excerpt block present.
+    """
+    pattern = re.compile(
+        r"^> ## Excerpt\s*\n((?:^>.*\n?)+)",
+        re.MULTILINE,
+    )
+    match = pattern.search(body)
+    if not match:
+        return None, body
+
+    quoted_block = match.group(1)
+    excerpt_lines = [
+        re.sub(r"^>\s?", "", line).strip()
+        for line in quoted_block.splitlines()
+    ]
+    excerpt_text = " ".join(line for line in excerpt_lines if line).strip()
+
+    new_body = body[: match.start()] + body[match.end():]
+    return excerpt_text, new_body
+
+
+def dedupe_excerpt_paragraph(body: str, excerpt_text: Optional[str]) -> str:
+    """Remove the first paragraph in body that exactly matches excerpt_text (normalized whitespace)."""
+    if not excerpt_text:
+        return body
+
+    target = re.sub(r"\s+", " ", excerpt_text).strip()
+    if not target:
+        return body
+
+    paragraphs = re.split(r"\n\s*\n", body)
+    kept = []
+    removed = False
+    for p in paragraphs:
+        normalized = re.sub(r"\s+", " ", p).strip()
+        if not removed and normalized == target:
+            removed = True
+            continue
+        kept.append(p)
+
+    return "\n\n".join(kept)
+
+
 def collapse_blank_lines(body: str) -> str:
     """Collapse 3+ consecutive blank lines to 2."""
     return re.sub(r"\n{3,}", "\n\n", body)
@@ -310,7 +359,10 @@ def process(job: dict, cfg: dict) -> dict:
         if metadata.get("title"):
             title = str(metadata["title"]).strip()
 
-    # Step 3 — Resolve capture date
+    # Step 3 — Extract and strip excerpt block (before boilerplate stripping)
+    excerpt_text, body = extract_and_strip_excerpt(body)
+
+    # Step 4 — Resolve capture date
     captured_dt = parse_markdownload_created(metadata.get("created"))
     if captured_dt:
         captured_str = captured_dt.strftime("%d-%b-%Y")
@@ -321,11 +373,14 @@ def process(job: dict, cfg: dict) -> dict:
         except (ValueError, TypeError):
             captured_str = datetime.now().strftime("%d-%b-%Y")
 
-    # Step 4 — Detect publication and clean body
+    # Step 5 — Detect publication and clean body
     source = str(metadata.get("source", "")).strip()
     publication = detect_publication(source)
     logger.info("Publication: %s", publication)
     cleaned_body = clean_body(body, publication)
+
+    # Step 6 — Dedupe excerpt paragraph that leaked into body
+    cleaned_body = dedupe_excerpt_paragraph(cleaned_body, excerpt_text)
 
     # Step 5 — Normalise author
     raw_author = metadata.get("author", "")
