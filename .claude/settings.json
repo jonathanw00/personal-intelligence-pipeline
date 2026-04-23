@@ -10,7 +10,8 @@
       "Bash(python tests/test_file_adapter.py)",
       "Bash(python -c \"import ast; ast.parse\\(open\\('tests/test_file_adapter.py'\\).read\\(\\)\\); print\\('test OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('writer.py'\\).read\\(\\)\\); print\\('writer.py OK'\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('adapters/file.py'\\).read\\(\\)\\); print\\('adapters/file.py OK'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('adapters/file.py'\\).read\\(\\)\\); print\\('adapters/file.py OK'\\)\")",
+      "Bash(python -)"
     ]
   }
 }

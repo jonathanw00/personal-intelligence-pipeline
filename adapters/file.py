@@ -25,8 +25,9 @@ PUBLICATION_NAMES = {
 HAIKU_PROMPT = (
     'You are processing a clipped web article for a personal knowledge base.\n\n'
     'The article body is provided below. Existing metadata: title="{title}", '
-    'source="{source}", author="{author}".\n\n'
-    "Generate the following in valid JSON only (no preamble, no code fences):\n\n"
+    'source="{source}", author="{author}".\n'
+    '{description_line}'
+    '\nGenerate the following in valid JSON only (no preamble, no code fences):\n\n'
     "{{\n"
     '  "filename_title": "3-8 word clean title for the filename, no special characters except hyphens",\n'
     '  "summary": "1-3 sentence summary of the article\'s core argument or finding",\n'
@@ -116,7 +117,7 @@ def _normalize_author(raw) -> str:
         return ""
     if isinstance(raw, list):
         parts = [_normalize_author(a) for a in raw]
-        return ", ".join(p for p in parts if p)
+        return " and ".join(p for p in parts if p)
     s = str(raw).strip()
     m = re.match(r"\[\[([^|\]]+)(?:\|[^\]]+)?\]\]", s)
     if m:
@@ -225,6 +226,35 @@ def strip_economist_newsletter(body: str) -> str:
     return body
 
 
+_NEWSLETTER_FOOTER_PATTERNS = [
+    re.compile(r"\n\*{0,2}Thanks for (?:reading|being|joining)", re.IGNORECASE),
+    re.compile(r"\nIf you(?:'re| are) enjoying what you(?:'re| are) reading", re.IGNORECASE),
+    re.compile(r"\nYou can also follow (?:me|us) on", re.IGNORECASE),
+    re.compile(r"\nInvite your friends and family to read", re.IGNORECASE),
+    re.compile(r"\nPlease consider (?:forwarding|sharing|subscribing|recommending)", re.IGNORECASE),
+    re.compile(r"\nHave feedback\?", re.IGNORECASE),
+]
+
+
+def strip_newsletter_footer(body: str) -> str:
+    """Truncate body at the first newsletter signup/footer line.
+
+    Also strips any trailing horizontal rules (--- or ___) that were separating
+    the article from the footer.
+    """
+    earliest = len(body)
+    for pat in _NEWSLETTER_FOOTER_PATTERNS:
+        m = pat.search(body)
+        if m and m.start() < earliest:
+            earliest = m.start()
+    if earliest < len(body):
+        body = body[:earliest]
+    # Strip trailing horizontal rules left before the footer
+    body = re.sub(r"(\n\s*---\s*)+$", "", body)
+    body = re.sub(r"(\n\s*___\s*)+$", "", body)
+    return body
+
+
 NYT_BOILERPLATE_PATTERNS = [
     re.compile(r"^Advertisement\s*$", re.MULTILINE),
     re.compile(r"^SKIP ADVERTISEMENT\s*$", re.MULTILINE),
@@ -299,15 +329,13 @@ def collapse_blank_lines(body: str) -> str:
 
 def clean_body(body: str, publication: str) -> str:
     body = strip_image_blocks(body)
-    body = strip_excerpt_separator(body)
     body = strip_html_small_tags(body)
     body = strip_inline_links(body)
+    body = strip_newsletter_footer(body)
     if publication == "wsj":
         body = strip_wsj_boilerplate(body)
     elif publication == "economist":
         body = strip_economist_newsletter(body)
-    elif publication == "nyt":
-        body = strip_nyt_boilerplate(body)
     body = collapse_blank_lines(body)
     return body.strip()
 
@@ -317,8 +345,11 @@ def clean_body(body: str, publication: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _call_haiku(cfg: dict, title: str, source: str, author: str, body: str) -> dict:
-    prompt = HAIKU_PROMPT.format(title=title, source=source, author=author, body=body)
+def _call_haiku(cfg: dict, title: str, source: str, author: str, body: str, description: str = "") -> dict:
+    desc_line = f'Description: "{description}"\n' if description else ""
+    prompt = HAIKU_PROMPT.format(
+        title=title, source=source, author=author, description_line=desc_line, body=body
+    )
     logger.info("Calling Haiku for enrichment (%d chars)", len(body))
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     response = client.messages.create(
@@ -365,19 +396,24 @@ def process(job: dict, cfg: dict) -> dict:
         metadata = {}
         body = content
 
-    # Step 2 — Extract H1 title, remove from body
-    title, body = extract_h1_multiline(body)
-    if title is None:
-        stem = os.path.splitext(filename)[0]
-        title = stem.replace("-", " ").replace("_", " ")
-        if metadata.get("title"):
-            title = str(metadata["title"]).strip()
+    # Step 2 — Extract title
+    # Primary: frontmatter title field (Web Clipper always provides this).
+    # Fallback: first H1 in body (safety net for files without frontmatter titles).
+    fm_title = metadata.get("title")
+    if fm_title:
+        title = re.sub(r"^Opinion\s*\|\s*", "", str(fm_title).strip())
+        _, body = extract_h1_multiline(body)  # strip duplicate H1 from body if present
+    else:
+        title, body = extract_h1_multiline(body)
+        if title is None:
+            stem = os.path.splitext(filename)[0]
+            title = stem.replace("-", " ").replace("_", " ")
 
-    # Step 3 — Extract and strip excerpt block (before boilerplate stripping)
-    excerpt_text, body = extract_and_strip_excerpt(body)
-
-    # Step 4 — Resolve capture date
-    captured_dt = parse_markdownload_created(metadata.get("created"))
+    # Step 3 — Resolve capture date
+    # Prefer published (article's publication date) over created (clip date).
+    captured_dt = parse_markdownload_created(
+        metadata.get("published") or metadata.get("created")
+    )
     if captured_dt:
         captured_str = captured_dt.strftime("%d-%b-%Y")
     else:
@@ -387,14 +423,11 @@ def process(job: dict, cfg: dict) -> dict:
         except (ValueError, TypeError):
             captured_str = datetime.now().strftime("%d-%b-%Y")
 
-    # Step 5 — Detect publication and clean body
+    # Step 4 — Detect publication and clean body
     source = str(metadata.get("source", "")).strip()
     publication = detect_publication(source)
     logger.info("Publication: %s", publication)
     cleaned_body = clean_body(body, publication)
-
-    # Step 6 — Dedupe excerpt paragraph that leaked into body
-    cleaned_body = dedupe_excerpt_paragraph(cleaned_body, excerpt_text)
 
     # Step 5 — Normalise author
     raw_author = metadata.get("author", "")
@@ -402,8 +435,11 @@ def process(job: dict, cfg: dict) -> dict:
     if not author:
         author = PUBLICATION_NAMES.get(publication, "")
 
-    # Step 6 — Call Haiku
-    haiku = _call_haiku(cfg, title, source, author, cleaned_body)
+    # Step 6 — Extract description for Haiku context
+    description = str(metadata.get("description", "")).strip()
+
+    # Step 7 — Call Haiku
+    haiku = _call_haiku(cfg, title, source, author, cleaned_body, description)
 
     return {
         "type": "article",
