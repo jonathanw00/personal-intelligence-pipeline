@@ -9,9 +9,15 @@ import adapters.file as file_adapter
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 MOCK_HAIKU = {
+    "filename_title": "Iran Tightens Grip on Strait",
     "summary": "test summary",
     "tags": ["iran", "shipping"],
-    "key_quotes": ["test quote"],
+    "key_points": [
+        {
+            "point": "Iran restricts shipping through the strait",
+            "quote": "There is no freedom of navigation",
+        }
+    ],
 }
 
 MOCK_CFG = {

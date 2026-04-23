@@ -2,6 +2,40 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
+from urllib.parse import urlparse
+
+
+PUBLICATION_MAP = {
+    "wsj.com": "Wall Street Journal",
+    "nytimes.com": "New York Times",
+    "economist.com": "The Economist",
+    "nationalreview.com": "National Review",
+    "deseretnews.com": "Deseret News",
+    "churchofjesuschrist.org": "Church of Jesus Christ",
+    "theatlantic.com": "The Atlantic",
+    "newyorker.com": "The New Yorker",
+}
+
+
+def _derive_publication(source_url: str) -> str:
+    if not source_url:
+        return ""
+    try:
+        netloc = urlparse(source_url).netloc.lower()
+    except Exception:
+        return ""
+    if not netloc:
+        return ""
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+    for domain, name in PUBLICATION_MAP.items():
+        if netloc == domain or netloc.endswith("." + domain):
+            return name
+    if netloc.endswith(".substack.com"):
+        subdomain = netloc[: -len(".substack.com")]
+        return subdomain.replace("-", " ").title()
+    first = netloc.split(".")[0]
+    return first.replace("-", " ").title()
 
 
 # Maps content_type → display suffix used in filename and frontmatter
@@ -80,13 +114,17 @@ def _build_frontmatter(
     tags_yaml = "\n".join(f"  - {t}" for t in claude_output["tags"])
     summary = claude_output["summary"].replace('"', '\\"')
     source_line = url if url else ""
+    publication = _derive_publication(source_line)
     return (
         "---\n"
         f"created: {created_str}\n"
         f"source: {source_line}\n"
+        f"publication: {publication}\n"
         f"type: {content_type}\n"
         f"tags:\n{tags_yaml}\n"
         "status: inbox\n"
+        "value:\n"
+        "character:\n"
         f'summary: "{summary}"\n'
         f'daily-note: "[[{note_date_str}]]"\n'
         "---"
@@ -222,6 +260,7 @@ def _build_file_frontmatter(payload: dict, created_str: str, note_date_str: str)
     tags_str = ("tags:\n" + "\n".join(f"  - {t}" for t in tags)) if tags else "tags: []"
     summary = payload.get("summary", "").replace('"', '\\"')
     source = payload.get("source", "")
+    publication = _derive_publication(source)
     author = payload.get("author", "")
     title = payload.get("title", "").replace('"', '\\"')
     captured = payload.get("captured", note_date_str)
@@ -230,11 +269,14 @@ def _build_file_frontmatter(payload: dict, created_str: str, note_date_str: str)
         f"created: {created_str}\n"
         f'captured: "[[{captured}]]"\n'
         f"source: {source}\n"
+        f"publication: {publication}\n"
         f"author: {author}\n"
-        "type: article\n"
-        "status: inbox\n"
         f'title: "{title}"\n'
+        "type: article\n"
         f"{tags_str}\n"
+        "status: inbox\n"
+        "value:\n"
+        "character:\n"
         f'summary: "{summary}"\n'
         f'daily-note: "[[{note_date_str}]]"\n'
         "---"
@@ -249,26 +291,23 @@ def write_file_note(cfg: dict, payload: dict, note_dt: datetime) -> Path:
     raw_title = _sanitise_filename(payload["title"])
     filename = f"{note_date_str} — {raw_title} — Article.md"
 
+    quote_style = cfg.get("quote_style", "highlight")
+    key_points = payload.get("key_points", [])
+    source_text = payload.get("body", "")
+    highlighted = _apply_highlights(source_text, key_points, quote_style)
+
     frontmatter = _build_file_frontmatter(payload, created_str, note_date_str)
-
     summary_section = f"## Summary\n\n{payload.get('summary', '')}"
+    key_points_section = f"## Key points\n\n{_build_key_points(key_points, quote_style)}"
+    source_body = _build_source_body(cfg, highlighted, quote_style)
 
-    quotes = payload.get("key_quotes", [])
-    quotes_section = (
-        "## Key Quotes\n\n" + "\n\n".join(f"> {q}" for q in quotes)
-        if quotes else ""
+    note = (
+        f"{frontmatter}\n\n"
+        f"{summary_section}\n\n"
+        f"{key_points_section}\n\n"
+        "---\n\n"
+        f"{source_body}\n"
     )
-
-    body = payload.get("body", "")
-    body_section = f"## Article\n\n{body}" if body else ""
-
-    parts = [frontmatter, summary_section]
-    if quotes_section:
-        parts.append(quotes_section)
-    if body_section:
-        parts.append(body_section)
-
-    note = "\n\n".join(parts) + "\n"
 
     vault_root = Path(cfg["obsidian_vault_path"])
     resources_dir = vault_root / cfg["resources_path"] / note_dt.strftime("%Y") / note_dt.strftime("%B")

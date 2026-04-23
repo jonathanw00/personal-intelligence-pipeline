@@ -28,11 +28,15 @@ HAIKU_PROMPT = (
     'source="{source}", author="{author}".\n\n'
     "Generate the following in valid JSON only (no preamble, no code fences):\n\n"
     "{{\n"
+    '  "filename_title": "3-8 word clean title for the filename, no special characters except hyphens",\n'
     '  "summary": "1-3 sentence summary of the article\'s core argument or finding",\n'
-    '  "tags": ["4-6 kebab-case tags", "..."],\n'
-    '  "key_quotes": ["1-3 verbatim pull quotes from the article that capture key ideas'
-    ' — strings only, no attribution"]\n'
+    '  "key_points": [\n'
+    '    {{"point": "distilled insight in one tight sentence", "quote": "sharpest verbatim line from the article supporting this point"}}\n'
+    '  ],\n'
+    '  "tags": ["4-7 kebab-case tags"]\n'
     "}}\n\n"
+    "key_points scale: 3-5 for focused pieces, 5-8 for substantial ones, up to 10 for dense long-form.\n"
+    "Each quote must be copied verbatim from the article body. Omit the quote field if no strong quote exists for a point.\n\n"
     "Tag rules:\n"
     "Tags must be ATOMIC single concepts — one idea per tag. Each tag should be\n"
     "something that could plausibly tag dozens of unrelated articles over time.\n\n"
@@ -333,7 +337,7 @@ def _call_haiku(cfg: dict, title: str, source: str, author: str, body: str) -> d
         return json.loads(cleaned)
     except (json.JSONDecodeError, ValueError):
         logger.warning("Haiku JSON parse failed — using empty defaults. Raw: %r", raw[:200])
-        return {"summary": "", "tags": [], "key_quotes": []}
+        return {"filename_title": title, "summary": "", "tags": [], "key_points": []}
 
 
 # ---------------------------------------------------------------------------
@@ -409,7 +413,7 @@ def process(job: dict, cfg: dict) -> dict:
         "captured": captured_str,
         "summary": haiku.get("summary", ""),
         "tags": haiku.get("tags", []),
-        "key_quotes": haiku.get("key_quotes", []),
+        "key_points": haiku.get("key_points", []),
         "body": cleaned_body,
         "status": "inbox",
     }

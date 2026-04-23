@@ -6,7 +6,9 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git branch *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git -C c:/Users/99jw0/Projects/personal-intelligence-pipeline add bot.py)",
+      "Bash(git -C c:/Users/99jw0/Projects/personal-intelligence-pipeline status)"
     ]
   }
 }
