@@ -33,6 +33,16 @@ HAIKU_PROMPT = (
     '  "key_quotes": ["1-3 verbatim pull quotes from the article that capture key ideas'
     ' — strings only, no attribution"]\n'
     "}}\n\n"
+    "Tag rules:\n"
+    "Tags must be ATOMIC single concepts — one idea per tag. Each tag should be\n"
+    "something that could plausibly tag dozens of unrelated articles over time.\n\n"
+    "Good (atomic): iran, shipping, oil, us-foreign-policy, strait-of-hormuz, sanctions, war\n\n"
+    "Bad (compound, multi-concept): iran-strait-of-hormuz, us-iran-conflict,\n"
+    "geopolitics-energy-crisis, global-economy-impact, shipping-blockade, maritime-security\n\n"
+    "If a concept feels like it needs two ideas joined by a hyphen, split it into two\n"
+    "separate tags instead. Hyphens are only for multi-word names of single concepts\n"
+    "(e.g. us-foreign-policy, climate-change, south-china-sea).\n\n"
+    "Aim for 4-7 tags total.\n\n"
     "Article body:\n---\n{body}\n---"
 )
 
