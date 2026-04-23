@@ -47,10 +47,35 @@ def test_nyt_full_pipeline():
     with patch.object(file_adapter, "_call_haiku", return_value=MOCK_HAIKU):
         payload = file_adapter.process(make_job("nyt-with-frontmatter.md"), MOCK_CFG)
 
+    body = payload["body"]
+
     # Bug 1 — multi-line H1
     assert payload["title"] == "Iran Again Tightens Its Grip on the Strait of Hormuz", (
         f"Got: {payload['title']!r}"
     )
+
+    # Bug 2 — NYT boilerplate stripped
+    assert "Advertisement" not in body
+    assert "SKIP ADVERTISEMENT" not in body
+    assert "\nListen\n" not in body
+    assert "· 6:45 min" not in body
+    assert not ("Updated" in body and "p.m. ET" in body)
+
+    # Bug 3 — excerpt block stripped
+    assert "## Excerpt" not in body
+    assert "> Traffic in the strait" not in body
+
+    # Bug 4 — dek paragraph appears at most once
+    dek_fragment = "Traffic in the strait has all but halted"
+    assert body.count(dek_fragment) <= 1, (
+        f"Dek fragment appears {body.count(dek_fragment)} times"
+    )
+
+    # Bug 5 — tags are atomic (checked against live Haiku output; mock skips this)
+    for tag in payload["tags"]:
+        assert tag.count("-") < 2 or tag in KNOWN_MULTIWORD_NAMES, (
+            f"Tag '{tag}' looks compound"
+        )
 
 
 if __name__ == "__main__":

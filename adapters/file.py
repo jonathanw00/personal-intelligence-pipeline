@@ -211,6 +211,24 @@ def strip_economist_newsletter(body: str) -> str:
     return body
 
 
+NYT_BOILERPLATE_PATTERNS = [
+    re.compile(r"^Advertisement\s*$", re.MULTILINE),
+    re.compile(r"^SKIP ADVERTISEMENT\s*$", re.MULTILINE),
+    re.compile(r"^Listen\s*$", re.MULTILINE),
+    re.compile(r"^·\s*\d+:\d+\s*min\s*$", re.MULTILINE),
+    re.compile(
+        r"^[A-Z][a-z]+ \d{1,2}, \d{4}Updated \d{1,2}:\d{2}\s*[ap]\.m\.\s*ET\s*$",
+        re.MULTILINE,
+    ),
+]
+
+
+def strip_nyt_boilerplate(body: str) -> str:
+    for pat in NYT_BOILERPLATE_PATTERNS:
+        body = pat.sub("", body)
+    return body
+
+
 def collapse_blank_lines(body: str) -> str:
     """Collapse 3+ consecutive blank lines to 2."""
     return re.sub(r"\n{3,}", "\n\n", body)
@@ -225,6 +243,8 @@ def clean_body(body: str, publication: str) -> str:
         body = strip_wsj_boilerplate(body)
     elif publication == "economist":
         body = strip_economist_newsletter(body)
+    elif publication == "nyt":
+        body = strip_nyt_boilerplate(body)
     body = collapse_blank_lines(body)
     return body.strip()
 
