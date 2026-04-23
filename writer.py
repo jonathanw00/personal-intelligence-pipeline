@@ -210,3 +210,70 @@ def write_note(
     note_path = resources_dir / filename
     note_path.write_text(note, encoding="utf-8")
     return note_path
+
+
+# ---------------------------------------------------------------------------
+# File-type note writer (input_type: "file" — Markdownload clippings)
+# ---------------------------------------------------------------------------
+
+
+def _build_file_frontmatter(payload: dict, created_str: str, note_date_str: str) -> str:
+    tags = payload.get("tags", [])
+    tags_str = ("tags:\n" + "\n".join(f"  - {t}" for t in tags)) if tags else "tags: []"
+    summary = payload.get("summary", "").replace('"', '\\"')
+    source = payload.get("source", "")
+    author = payload.get("author", "")
+    title = payload.get("title", "").replace('"', '\\"')
+    captured = payload.get("captured", note_date_str)
+    return (
+        "---\n"
+        f"created: {created_str}\n"
+        f'captured: "[[{captured}]]"\n'
+        f"source: {source}\n"
+        f"author: {author}\n"
+        "type: article\n"
+        "status: inbox\n"
+        f'title: "{title}"\n'
+        f"{tags_str}\n"
+        f'summary: "{summary}"\n'
+        f'daily-note: "[[{note_date_str}]]"\n'
+        "---"
+    )
+
+
+def write_file_note(cfg: dict, payload: dict, note_dt: datetime) -> Path:
+    """Assemble and write a file-intake note to the vault. Returns the note path."""
+    note_date_str = _format_date(note_dt)
+    created_str = _format_date(datetime.now())
+
+    raw_title = _sanitise_filename(payload["title"])
+    filename = f"{note_date_str} — {raw_title} — Article.md"
+
+    frontmatter = _build_file_frontmatter(payload, created_str, note_date_str)
+
+    summary_section = f"## Summary\n\n{payload.get('summary', '')}"
+
+    quotes = payload.get("key_quotes", [])
+    quotes_section = (
+        "## Key Quotes\n\n" + "\n\n".join(f"> {q}" for q in quotes)
+        if quotes else ""
+    )
+
+    body = payload.get("body", "")
+    body_section = f"## Article\n\n{body}" if body else ""
+
+    parts = [frontmatter, summary_section]
+    if quotes_section:
+        parts.append(quotes_section)
+    if body_section:
+        parts.append(body_section)
+
+    note = "\n\n".join(parts) + "\n"
+
+    vault_root = Path(cfg["obsidian_vault_path"])
+    resources_dir = vault_root / cfg["resources_path"] / note_dt.strftime("%Y") / note_dt.strftime("%B")
+    resources_dir.mkdir(parents=True, exist_ok=True)
+
+    note_path = resources_dir / filename
+    note_path.write_text(note, encoding="utf-8")
+    return note_path

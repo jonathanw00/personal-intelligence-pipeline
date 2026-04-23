@@ -198,30 +198,48 @@ def process_job(job_path: Path, cfg: dict, logger: logging.Logger, dry_run: bool
         if content_type != "article":
             raise ValueError(f"Unsupported content type: {content_type}")
 
-        # --- Extract text ---
-        if job["input_type"] == "url":
-            fetched = article_adapter.fetch(job["url"])
-            text = fetched["text"]
-            url = job["url"]
-        else:
-            text = job["text"]
-            url = job.get("url") or ""
+        input_type = job["input_type"]
 
-        # --- Claude ---
-        logger.info("Calling Claude (%s)", cfg["claude_model"])
-        claude_output = call_claude(cfg, content_type, url, text)
+        if input_type == "file":
+            # --- File adapter path ---
+            from adapters.file import process as process_file
+            payload = process_file(job, cfg)
 
-        # --- Write note ---
-        if dry_run:
-            logger.info("Dry run — skipping vault write. Claude output:\n%s",
-                        json.dumps(claude_output, indent=2))
+            if dry_run:
+                safe = {k: v for k, v in payload.items() if k != "body"}
+                logger.info("Dry run — skipping vault write. File payload:\n%s",
+                            json.dumps(safe, indent=2))
+            else:
+                note_path = writer.write_file_note(cfg, payload, note_dt)
+                logger.info("Note written: %s", note_path)
+                if cfg.get("daily_note_append", True):
+                    daily_note.append_wikilink(cfg, note_path.stem, note_dt, logger)
+
         else:
-            note_path = writer.write_note(
-                cfg, claude_output, url, note_dt, text, content_type
-            )
-            logger.info("Note written: %s", note_path)
-            if cfg.get("daily_note_append", True):
-                daily_note.append_wikilink(cfg, note_path.stem, note_dt, logger)
+            # --- URL / text path ---
+            if input_type == "url":
+                fetched = article_adapter.fetch(job["url"])
+                text = fetched["text"]
+                url = job["url"]
+            else:
+                text = job["text"]
+                url = job.get("url") or ""
+
+            # --- Claude ---
+            logger.info("Calling Claude (%s)", cfg["claude_model"])
+            claude_output = call_claude(cfg, content_type, url, text)
+
+            # --- Write note ---
+            if dry_run:
+                logger.info("Dry run — skipping vault write. Claude output:\n%s",
+                            json.dumps(claude_output, indent=2))
+            else:
+                note_path = writer.write_note(
+                    cfg, claude_output, url, note_dt, text, content_type
+                )
+                logger.info("Note written: %s", note_path)
+                if cfg.get("daily_note_append", True):
+                    daily_note.append_wikilink(cfg, note_path.stem, note_dt, logger)
 
         proc_path.rename(DONE_DIR / job_name)
         logger.info("Done: %s", job_name)
